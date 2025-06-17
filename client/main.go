@@ -15,6 +15,8 @@ func main() {
 		log.Fatalln("Must specify a name as the command-line argument")
 	}
 
+	input := os.Args[1]
+
 	c, err := client.Dial(client.Options{})
 	if err != nil {
 		log.Fatalln("Unable to create client", err)
@@ -28,7 +30,7 @@ func main() {
 		TaskQueue: temporaltalk.TaskQueueName,
 	}
 
-	we, err := c.ExecuteWorkflow(context.Background(), options, temporaltalk.MainWorkflow)
+	we, err := c.ExecuteWorkflow(context.Background(), options, temporaltalk.MainWorkflow, input)
 	if err != nil {
 		log.Fatalln("Unable to execute workflow", err)
 	}
