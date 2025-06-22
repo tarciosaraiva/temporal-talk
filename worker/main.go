@@ -28,7 +28,6 @@ func main() {
 
 	// Register Workflow and Activities
 	w.RegisterWorkflow(temporaltalk.MainWorkflow)
-	w.RegisterWorkflow(temporaltalk.ChildActionWorkflow)
 	w.RegisterActivity(basicActivity)
 	w.RegisterActivity(remoteServiceActivity)
 
