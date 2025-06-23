@@ -33,11 +33,6 @@ func (i *RemoteServiceActivity) GetIP(ctx context.Context) (string, error) {
 	return ip, nil
 }
 
-type Geopoint struct {
-	Latitude  float32 `json:"lat"`
-	Longitude float32 `json:"lon"`
-}
-
 func (i *RemoteServiceActivity) GetLocationInfo(ctx context.Context, ip string) (*Geopoint, error) {
 	url := fmt.Sprintf("http://ip-api.com/json/%s", ip)
 	resp, err := i.HTTPClient.Get(url)
@@ -60,17 +55,17 @@ func (i *RemoteServiceActivity) GetLocationInfo(ctx context.Context, ip string) 
 	return data, nil
 }
 
-func (i *RemoteServiceActivity) GetWeather(ctx context.Context, location Geopoint) (string, error) {
-	url := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f&current=temperature", location.Latitude, location.Longitude)
+func (i *RemoteServiceActivity) GetWeather(ctx context.Context, lat float32, lon float32) (float32, error) {
+	url := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f&current=temperature", lat, lon)
 	resp, err := i.HTTPClient.Get(url)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
 	type currentWeather struct {
@@ -83,8 +78,8 @@ func (i *RemoteServiceActivity) GetWeather(ctx context.Context, location Geopoin
 
 	err = json.Unmarshal(body, &data)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
-	return fmt.Sprintf("Current temperature is %.2f °C.", data.Current.Temperature), nil
+	return data.Current.Temperature, nil
 }

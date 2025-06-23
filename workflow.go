@@ -8,7 +8,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-func MainWorkflow(ctx workflow.Context, input string) (string, error) {
+func MainWorkflow(ctx workflow.Context, input string) (*WeatherOutput, error) {
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute, // maximum time the activity can run
 		RetryPolicy: &temporal.RetryPolicy{
@@ -23,29 +23,30 @@ func MainWorkflow(ctx workflow.Context, input string) (string, error) {
 	var basicActivity *BasicActivity
 	var remoteServiceActivity *RemoteServiceActivity
 
-	var result string
-	err := workflow.ExecuteActivity(ctx, basicActivity.RunBasicActivity, input).Get(ctx, &result)
+	var result WeatherOutput
+
+	err := workflow.ExecuteActivity(ctx, basicActivity.RunBasicActivity, input).Get(ctx, &result.Name)
 	if err != nil {
-		return "", fmt.Errorf("Failed to run basic activity: %s", err)
+		return nil, fmt.Errorf("Failed to run basic activity: %s", err)
 	}
 
-	var ip string
-	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetIP).Get(ctx, &ip)
+	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetIP).Get(ctx, &result.IpAddress)
 	if err != nil {
-		return "", fmt.Errorf("Could not get IP: %s", err)
+		return nil, fmt.Errorf("Could not get IP: %s", err)
 	}
 
-	var location Geopoint
-	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetLocationInfo, ip).Get(ctx, &location)
+	var geoPoint Geopoint
+	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetLocationInfo, result.IpAddress).Get(ctx, &geoPoint)
 	if err != nil {
-		return "", fmt.Errorf("Could not geolocate with IP: %s", err)
+		return nil, fmt.Errorf("Could not geolocate with IP: %s", err)
 	}
 
-	var weather string
-	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetWeather, location).Get(ctx, &weather)
+	result.City = geoPoint.City
+
+	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetWeather, geoPoint.Latitude, geoPoint.Longitude).Get(ctx, &result.CurrentForecast)
 	if err != nil {
-		return "", fmt.Errorf("Could not retrieve weather: %s", err)
+		return nil, fmt.Errorf("Could not retrieve weather: %s", err)
 	}
 
-	return weather, nil
+	return &result, nil
 }

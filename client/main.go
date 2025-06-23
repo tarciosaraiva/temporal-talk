@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -35,11 +36,13 @@ func main() {
 		log.Fatalln("Unable to execute workflow", err)
 	}
 
-	var result string
+	var result temporaltalk.WeatherOutput
 	err = we.Get(context.Background(), &result)
 	if err != nil {
 		log.Fatalln("Unable get workflow result", err)
 	}
 
-	fmt.Println(result)
+	b, _ := json.MarshalIndent(result, "", "  ")
+
+	fmt.Println(string(b))
 }
