@@ -1,7 +1,6 @@
 package temporaltalk
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,16 +10,19 @@ import (
 )
 
 const (
-	OnTheMoveSignal = "OnTheMove"
-	TwentySeconds   = 30 * time.Second
+	OnTheMoveUpdate  = "OnTheMove"
+	StopMovingSignal = "StopMoving"
+	TwentySeconds    = 30 * time.Second
 )
 
-type OnTheMoveInput struct {
+type StopMovingSignalInput struct {
 	IsMoving bool `json:"isMoving"`
 }
 
-func MainWorkflow(ctx workflow.Context, input WorkflowInput) error {
+func MainWorkflow(ctx workflow.Context, input WorkflowInput) (WeatherOutput, error) {
 	logger := workflow.GetLogger(ctx)
+
+	isMoving := input.Moving
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute, // maximum time the activity can run
@@ -48,52 +50,53 @@ func MainWorkflow(ctx workflow.Context, input WorkflowInput) error {
 
 	err := workflow.ExecuteActivity(ctx, basicActivity.RunBasicActivity, input.Name).Get(ctx, &weatherOutput.Name)
 	if err != nil {
-		return fmt.Errorf("Failed to run basic activity: %s", err)
+		logger.Error("Failed to run basic activity.", "Error", err)
+		return weatherOutput, fmt.Errorf("Failed to run basic activity: %s", err)
 	}
 
 	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetIP).Get(ctx, &weatherOutput.IpAddress)
 	if err != nil {
-		return fmt.Errorf("Could not get IP: %s", err)
+		logger.Error("Could not retrieve IP address.", "Error", err)
+		return weatherOutput, fmt.Errorf("Could not get IP: %s", err)
 	}
 
-	err = workflow.ExecuteChildWorkflow(ctx, ChildActionWorkflow, weatherOutput).Get(ctx, &weatherOutput)
-	if err != nil {
-		return fmt.Errorf("Could not retrieve weather: %s", err)
-	}
-
-	logger.Info(stringifiedWeather(weatherOutput))
+	//
+	cwfHandle := workflow.ExecuteChildWorkflow(ctx, ChildActionWorkflow, weatherOutput)
 
 	// setup a signal receiver
-	// blocks execution when it is received
-	var onTheMoveInput OnTheMoveInput
-	signalChannel := workflow.GetSignalChannel(ctx, OnTheMoveSignal)
-	signalChannel.Receive(ctx, &onTheMoveInput)
+	var stopMovingSignalInput StopMovingSignalInput
+	signalChannel := workflow.GetSignalChannel(ctx, StopMovingSignal)
 
-	logger.Info("Received Signal", "Channel", OnTheMoveSignal, "Input", &onTheMoveInput)
+	for isMoving {
+		workflow.SetUpdateHandler(ctx, OnTheMoveUpdate, func(ctx workflow.Context) (WeatherOutput, error) {
+			return executeChildWorkflow(cwfHandle, ctx, weatherOutput)
+		})
 
-	// go select concept reimplemented in Temporal
-	// allows to wait on multiple communication ops
-	selector := workflow.NewSelector(ctx)
+		logger.Debug("Setup update handler.")
 
-	selector.AddReceive(signalChannel, func(c workflow.ReceiveChannel, more bool) {
-		c.Receive(ctx, &onTheMoveInput)
-	})
+		// go select concept reimplemented in Temporal
+		// allows to wait on multiple communication ops
+		selector := workflow.NewSelector(ctx)
 
-	// if it's moving starts a loop and sets up more waiting until another signal is sent
-	for onTheMoveInput.IsMoving {
-		selector.AddFuture(workflow.NewTimer(ctx, TwentySeconds), func(f workflow.Future) {
-			err = workflow.ExecuteChildWorkflow(ctx, ChildActionWorkflow, weatherOutput).Get(ctx, &weatherOutput)
-			if err != nil {
-				logger.Error("Could not retrieve weather. Bye bye.")
-			}
-
-			logger.Info(stringifiedWeather(weatherOutput))
+		selector.AddReceive(signalChannel, func(c workflow.ReceiveChannel, more bool) {
+			c.Receive(ctx, &stopMovingSignalInput)
+			isMoving = stopMovingSignalInput.IsMoving
 		})
 
 		selector.Select(ctx)
+
+		logger.Debug("Selector waiting for signal.")
 	}
 
-	return nil
+	return executeChildWorkflow(cwfHandle, ctx, weatherOutput)
+}
+
+func executeChildWorkflow(childWorkflow workflow.ChildWorkflowFuture, ctx workflow.Context, weatherOutput WeatherOutput) (WeatherOutput, error) {
+	err := childWorkflow.Get(ctx, &weatherOutput)
+	if err != nil {
+		return weatherOutput, fmt.Errorf("Could not retrieve weather: %s", err)
+	}
+	return weatherOutput, nil
 }
 
 func ChildActionWorkflow(ctx workflow.Context, input WeatherOutput) (WeatherOutput, error) {
@@ -124,9 +127,4 @@ func ChildActionWorkflow(ctx workflow.Context, input WeatherOutput) (WeatherOutp
 	}
 
 	return input, nil
-}
-
-func stringifiedWeather(input WeatherOutput) string {
-	b, _ := json.MarshalIndent(input, "", "  ")
-	return string(b)
 }
