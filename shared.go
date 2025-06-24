@@ -16,3 +16,8 @@ type Geopoint struct {
 	Latitude  float32 `json:"lat"`
 	Longitude float32 `json:"lon"`
 }
+
+type WorkflowInput struct {
+	Name   string `json:"name"`
+	Moving bool   `json:"moving"`
+}
