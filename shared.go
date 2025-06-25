@@ -9,6 +9,7 @@ type WeatherOutput struct {
 	IpAddress       string  `json:"ip_address"`
 	City            string  `json:"city"`
 	CurrentForecast float32 `json:"current_forecast"`
+	// RandomNumber    int     `json:"random_number"`
 }
 
 type Geopoint struct {

@@ -20,7 +20,8 @@ func main() {
 	}
 
 	name := os.Args[1]
-	isMoving, _ := strconv.ParseBool(os.Args[2])
+	clientId := os.Args[2]
+	isMoving, _ := strconv.ParseBool(os.Args[3])
 
 	c, err := client.Dial(client.Options{})
 	if err != nil {
@@ -28,7 +29,7 @@ func main() {
 	}
 	defer c.Close()
 
-	workflowID := "talk-for-onsite"
+	workflowID := fmt.Sprintf("main-%s-%s", name, clientId)
 
 	options := client.StartWorkflowOptions{
 		ID:        workflowID,

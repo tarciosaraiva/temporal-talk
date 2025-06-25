@@ -39,9 +39,11 @@ func MainWorkflow(ctx workflow.Context, input WorkflowInput) (WeatherOutput, err
 	// It will call the ChildActionWorkflow and handle its result.
 	cwo := workflow.ChildWorkflowOptions{
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_TERMINATE,
-		WorkflowID:        "remote-executions-wf",
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
+
+	// gets the current version
+	// v := workflow.GetVersion(ctx, "V1", workflow.DefaultVersion, 1)
 
 	var basicActivity *BasicActivity
 	var remoteServiceActivity *RemoteServiceActivity
@@ -54,14 +56,19 @@ func MainWorkflow(ctx workflow.Context, input WorkflowInput) (WeatherOutput, err
 		return weatherOutput, fmt.Errorf("Failed to run basic activity: %s", err)
 	}
 
+	// if v == 1 {
+	// 	err = workflow.ExecuteActivity(ctx, basicActivity.GetNumber).Get(ctx, &weatherOutput.RandomNumber)
+	// 	if err != nil {
+	// 		logger.Error("Failed to generate a random number.", "Error", err)
+	// 		return weatherOutput, fmt.Errorf("Failed to generate a random number: %s", err)
+	// 	}
+	// }
+
 	err = workflow.ExecuteActivity(ctx, remoteServiceActivity.GetIP).Get(ctx, &weatherOutput.IpAddress)
 	if err != nil {
 		logger.Error("Could not retrieve IP address.", "Error", err)
 		return weatherOutput, fmt.Errorf("Could not get IP: %s", err)
 	}
-
-	//
-	cwfHandle := workflow.ExecuteChildWorkflow(ctx, ChildActionWorkflow, weatherOutput)
 
 	// setup a signal receiver
 	var stopMovingSignalInput StopMovingSignalInput
@@ -69,7 +76,7 @@ func MainWorkflow(ctx workflow.Context, input WorkflowInput) (WeatherOutput, err
 
 	for isMoving {
 		workflow.SetUpdateHandler(ctx, OnTheMoveUpdate, func(ctx workflow.Context) (WeatherOutput, error) {
-			return executeChildWorkflow(cwfHandle, ctx, weatherOutput)
+			return executeChildWorkflow(ctx, weatherOutput)
 		})
 
 		logger.Debug("Setup update handler.")
@@ -88,11 +95,11 @@ func MainWorkflow(ctx workflow.Context, input WorkflowInput) (WeatherOutput, err
 		logger.Debug("Selector waiting for signal.")
 	}
 
-	return executeChildWorkflow(cwfHandle, ctx, weatherOutput)
+	return executeChildWorkflow(ctx, weatherOutput)
 }
 
-func executeChildWorkflow(childWorkflow workflow.ChildWorkflowFuture, ctx workflow.Context, weatherOutput WeatherOutput) (WeatherOutput, error) {
-	err := childWorkflow.Get(ctx, &weatherOutput)
+func executeChildWorkflow(ctx workflow.Context, weatherOutput WeatherOutput) (WeatherOutput, error) {
+	err := workflow.ExecuteChildWorkflow(ctx, ChildActionWorkflow, weatherOutput).Get(ctx, &weatherOutput)
 	if err != nil {
 		return weatherOutput, fmt.Errorf("Could not retrieve weather: %s", err)
 	}
